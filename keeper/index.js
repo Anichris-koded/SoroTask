@@ -592,6 +592,9 @@ async function main() {
   const registry = new TaskRegistry(server, config.contractId, {
     startLedger: parseInt(process.env.START_LEDGER || "0", 10),
     logger: createLogger("registry"),
+    resolverCacheEnabled: config.resolverCacheEnabled,
+    resolverCacheTtlSeconds: config.resolverCacheTtlSeconds,
+    resolverCacheMaxSize: config.resolverCacheMaxSize,
   });
   await registry.init();
 

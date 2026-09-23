@@ -661,7 +661,7 @@ class TaskPoller {
 
       let resolver = null;
       if (isDue) {
-        resolver = await this.evaluateResolverGate(taskId, taskConfig, currentTimestamp, { correlationId, taskLogger });
+        resolver = await this.evaluateResolverGate(taskId, taskConfig, currentTimestamp, { correlationId, taskLogger, registry });
         if (resolver && !resolver.isReady) {
           isDue = false;
           reason = resolver.reason === 'error'
@@ -724,6 +724,24 @@ class TaskPoller {
     }
 
     const taskLogger = options.taskLogger || this.logger;
+    const registry = options.registry || null;
+
+    // Serve a cached resolver result when one exists. The registry-level LRU
+    // cache (TTL + event-driven invalidation) lets unchanged tasks skip repeat
+    // resolver executions entirely (issue #788).
+    if (registry && typeof registry.getResolverResult === 'function') {
+      const cached = registry.getResolverResult(taskId);
+      if (cached) {
+        taskLogger.debug('Resolver result served from cache', {
+          taskId,
+          resolverId: cached.resolverId || resolverId,
+          isReady: cached.isReady,
+        });
+        return cached;
+      }
+    }
+
+    const canCache = registry && typeof registry.setResolverResult === 'function';
 
     if (!this.resolverRuntime) {
       taskLogger.warn('Task declares resolver but no resolver runtime is configured', {
@@ -757,7 +775,7 @@ class TaskPoller {
         });
       }
 
-      return {
+      const resolverResult = {
         resolverId,
         isReady: result.isReady,
         reason: result.reason || null,
@@ -766,6 +784,15 @@ class TaskPoller {
         runtime: result.runtime,
         durationMs: result.durationMs,
       };
+
+      // Populate the registry-level cache for subsequent polling cycles. Only
+      // the success path is cached; error/fallback outcomes are left out so a
+      // transient resolver failure is never masked for the full TTL.
+      if (canCache) {
+        registry.setResolverResult(taskId, resolverResult);
+      }
+
+      return resolverResult;
     } catch (error) {
       taskLogger.error('Resolver execution failed', {
         taskId,
