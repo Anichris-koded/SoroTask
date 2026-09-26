@@ -21,10 +21,13 @@ export default function GasOptimizationEngine() {
     feeTiers,
     bestHourUtc,
     potentialOffpeakSavingsPercent,
+    hourlyHistory,
+    scheduledHourUtc,
     batchOpportunities,
     isSimulating,
     simulationResult,
     refreshMetrics,
+    optimizeSchedule,
     runSimulation,
     applyBatching,
   } = useGasOptimizationStore();
@@ -178,6 +181,34 @@ export default function GasOptimizationEngine() {
             </div>
           </article>
         </div>
+
+        <section className="rounded-xl border border-white/5 bg-slate-950/40 p-5" aria-labelledby="weekly-heatmap-title">
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h4 id="weekly-heatmap-title" className="text-sm font-bold text-white">7-day hourly congestion</h4>
+              <p className="mt-1 text-xs text-slate-400">Estimated average fee for each UTC hour (lower is cheaper).</p>
+            </div>
+            <button type="button" onClick={optimizeSchedule} className="rounded bg-emerald-400 px-3 py-2 text-xs font-bold text-slate-950 hover:bg-emerald-300">
+              Optimize schedule
+            </button>
+          </div>
+          <div className="grid grid-cols-[auto_repeat(24,minmax(0,1fr))] gap-1" role="grid" aria-label="Seven day gas fee heatmap">
+            <span />
+            {Array.from({ length: 24 }, (_, hour) => <span key={hour} className="text-center text-[9px] text-slate-500">{hour % 6 === 0 ? hour : ""}</span>)}
+            {Array.from({ length: 7 }, (_, day) => (
+              <React.Fragment key={day}>
+                <span className="pr-1 text-[10px] text-slate-400">D{day + 1}</span>
+                {hourlyHistory.filter((sample) => sample.day === day).map((sample) => {
+                  const intensity = Math.min(1, sample.feeXlm / 0.15);
+                  return <span key={sample.hour} role="gridcell" title={`Day ${day + 1}, ${sample.hour}:00 UTC: ${sample.feeXlm.toFixed(3)} XLM`} className={`h-4 rounded-sm ${intensity < 0.45 ? "bg-emerald-500/50" : intensity < 0.65 ? "bg-amber-400/60" : "bg-rose-500/70"}`} />;
+                })}
+              </React.Fragment>
+            ))}
+          </div>
+          <p className="mt-3 text-xs text-emerald-300" aria-live="polite">
+            {scheduledHourUtc === null ? `Lowest average window: ${bestHourUtc}:00 UTC (estimated ${potentialOffpeakSavingsPercent}% savings).` : `Schedule optimized for ${scheduledHourUtc}:00 UTC. Estimated savings: ${potentialOffpeakSavingsPercent}%.`}
+          </p>
+        </section>
       </section>
 
       {/* Interactive dry-run simulator panel */}
