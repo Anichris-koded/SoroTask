@@ -24,10 +24,14 @@ import React, {
 import {
   connectWallet,
   restoreSession,
+  restoreWalletSession,
+  connectWalletWith,
+  disconnectWallet,
   watchWalletChanges,
   WalletConnectionError,
   type WalletSession,
   type WalletError,
+  type SupportedWallet,
 } from "@/app/lib/wallet";
 
 // ---------------------------------------------------------------------------
@@ -61,6 +65,8 @@ export type WalletContextValue = {
   closeConnectModal: () => void;
   /** Trigger wallet connection (shows Freighter popup) */
   connect: () => Promise<void>;
+  /** Connect to a specific wallet */
+  connectWith: (walletId: SupportedWallet) => Promise<void>;
   /** Clear session state */
   disconnect: () => void;
   /** Clear the current error */
@@ -184,7 +190,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
 
     async function restore() {
       setStatus("restoring");
-      const existing = await restoreSession();
+      const existing = await restoreWalletSession() ?? await restoreSession();
       if (cancelled) return;
 
       if (existing) {
@@ -221,6 +227,20 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     }
   }, [startWatcher, setError]);
 
+  const connectWith = useCallback(async (walletId: SupportedWallet) => {
+    setIsConnectModalOpen(true);
+    setStatus("connecting");
+    setErrorCode(null);
+    setErrorMessage(null);
+
+    try {
+      const newSession = await connectWalletWith(walletId);
+      startWatcher(newSession);
+    } catch (err) {
+      setError(err);
+    }
+  }, [startWatcher, setError]);
+
   const disconnect = useCallback(() => {
     stopWatcherRef.current?.();
     stopWatcherRef.current = null;
@@ -228,10 +248,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     setErrorCode(null);
     setErrorMessage(null);
     setStatus("disconnected");
-    
-    if (typeof window !== "undefined") {
-      localStorage.setItem("sorotask_wallet_disconnected", "true");
-    }
+    disconnectWallet();
   }, []);
 
   const clearError = useCallback(() => {
@@ -256,6 +273,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         openConnectModal,
         closeConnectModal,
         connect,
+        connectWith,
         disconnect,
         clearError,
       }}
@@ -285,6 +303,7 @@ const DEFAULT_WALLET_CONTEXT: WalletContextValue = {
   openConnectModal: () => {},
   closeConnectModal: () => {},
   connect: async () => {},
+  connectWith: async () => {},
   disconnect: () => {},
   clearError: () => {},
 };
