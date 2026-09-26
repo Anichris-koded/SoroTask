@@ -92,5 +92,10 @@
     "seconds_short": "秒",
     "interval_display": "{hours}小时({seconds}秒)",
     "xlm_unit": "XLM"
+  },
+  "language": {
+    "label": "选择语言",
+    "loading": "正在加载语言...",
+    "available": "{count, plural, other {# 种语言}}"
   }
 }

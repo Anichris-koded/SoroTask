@@ -92,5 +92,10 @@
     "seconds_short": "s",
     "interval_display": "{hours}h ({seconds} seconds)",
     "xlm_unit": "XLM"
+  },
+  "language": {
+    "label": "Select language",
+    "loading": "Loading language...",
+    "available": "{count, plural, =0 {No languages} one {# language} other {# languages}}"
   }
 }
