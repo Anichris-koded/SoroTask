@@ -1,5 +1,27 @@
 import { test, expect, type Page } from "@playwright/test";
 
+export class MockWalletProvider {
+  constructor(private page: Page) {}
+
+  async connect() {
+    await this.page.addInitScript(() => {
+      (window as unknown as Record<string, unknown>).__MOCK_WALLET__ = {
+        address: "GABCDEFGHIJKLMNOPQRSTUVWXYZ234567",
+        publicKey: "GABCDEFGHIJKLMNOPQRSTUVWXYZ234567",
+        connected: true,
+        network: "futurenet",
+      };
+    });
+    await this.page.getByTestId('connect-wallet-button').click();
+    await expect(this.page.getByTestId('wallet-connected-button')).toBeVisible();
+  }
+
+  async disconnect() {
+    await this.page.getByTestId('wallet-connected-button').click();
+    await this.page.getByTestId('disconnect-wallet').click();
+  }
+}
+
 export async function mockWalletConnect(page: Page) {
   await page.addInitScript(() => {
     (window as unknown as Record<string, unknown>).__MOCK_WALLET__ = {
