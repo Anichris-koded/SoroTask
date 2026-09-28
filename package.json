@@ -17,7 +17,7 @@
     "lint": "npm run lint --workspaces --if-present"
   },
   "devDependencies": {
-    "eslint": "^10.9.1",
+    "eslint": "^10.11.0",
     "husky": "^9.1.7",
     "lint-staged": "^17.4.1",
     "prettier": "^3.9.6",
