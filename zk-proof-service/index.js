@@ -249,6 +249,10 @@ class ZKProofService extends EventEmitter {
     this.asyncJobs = new Map();
     this.proofCache = options.proofCache ?? new ProofCache({ redisUrl: options.redisUrl ?? process.env.REDIS_URL });
     this.inFlightProofs = new Map();
+    // Ceremony artifact entries to verify on initialize().
+    // Each entry: { file: string, expectedSha256: string }
+    // Inject via options.zkeyAuditEntries (or leave empty to skip, e.g. in tests).
+    this.zkeyAuditEntries = options.zkeyAuditEntries ?? null;
     this.proverQueue = new ProverJobQueue({
       redisUrl: options.redisUrl ?? process.env.REDIS_URL,
       concurrency: CPU_CONCURRENCY,
@@ -295,7 +299,16 @@ class ZKProofService extends EventEmitter {
     });
   }
 
-  initialize() {
+  async initialize() {
+    // ── Trusted Setup Gate ───────────────────────────────────────────────────
+    // Verify zkey / Powers-of-Tau artifact integrity before the worker pool
+    // is started and before any proof request can be accepted.
+    // Pass options.zkeyAuditEntries when constructing to enable this check.
+    // Startup is aborted with a thrown Error if any file is missing or its
+    // SHA-256 checksum does not match the expected ceremony value.
+    if (this.zkeyAuditEntries && this.zkeyAuditEntries.length > 0) {
+      await auditZkeyChecksums(this.zkeyAuditEntries);
+    }
     this.isReady = true;
     this.startedAt = Date.now();
     this.workers = [];
@@ -560,4 +573,4 @@ class ZKProofService extends EventEmitter {
   }
 }
 
-module.exports = { ZKProofService };
+module.exports = { ZKProofService, auditZkeyChecksums, computeFileSha256 };
