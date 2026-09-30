@@ -2,11 +2,13 @@ const EventEmitter = require('events');
 const { xdr } = require('@stellar/stellar-sdk');
 const { createLogger } = require('./logger');
 const TaskSnapshot = require('./taskSnapshot');
+const { TaskMetadataCache } = require('./taskMetadataCache');
 
 const EVENT_TOPICS = {
   TaskRegistered: 'AAAADwAAAA5UYXNrUmVnaXN0ZXJlZAAA',
   TaskPaused: 'AAAADwAAAApUYXNrUGF1c2VkAAA=',
   TaskResumed: 'AAAADwAAAAtUYXNrUmVzdW1lZAA=',
+  TaskUpdated: 'AAAADwAAAAtUYXNrVXBkYXRlZAA=',
   KeeperPaid: 'AAAADwAAAApLZWVwZXJQYWlkAAA=',
   GasDeposited: 'AAAADwAAAAxHYXNEZXBvc2l0ZWQ=',
   GasWithdrawn: 'AAAADwAAAAxHYXNXaXRoZHJhd24=',
@@ -14,6 +16,9 @@ const EVENT_TOPICS = {
   DependencyAdded: 'AAAADwAAAA9EZXBlbmRlbmN5QWRkZWQA',
   DependencyRemoved: 'AAAADwAAABFEZXBlbmRlbmN5UmVtb3ZlZAAAAA==',
 };
+
+const DEFAULT_RESOLVER_CACHE_TTL_SECONDS = 30;
+const DEFAULT_RESOLVER_CACHE_MAX_SIZE = 5000;
 
 class TaskRegistry extends EventEmitter {
   constructor(server, contractId, options = {}) {
@@ -24,6 +29,27 @@ class TaskRegistry extends EventEmitter {
     this.tasks = new Map(); // taskId -> TaskConfig
     this.lastSeenLedger = options.startLedger || 0;
     this.logger = options.logger || createLogger('registry');
+
+    // Resolver check result cache — LRU + TTL + event-driven invalidation
+    // (issue #788). The poller stores the outcome of a task's dependency
+    // resolver gate here so unchanged tasks are not re-evaluated every
+    // polling cycle. Entries are discarded automatically whenever an
+    // on-chain event mutates that task (TaskUpdated, DependencyAdded, ...).
+    this.resolverCacheEnabled = options.resolverCacheEnabled !== false;
+    if (this.resolverCacheEnabled) {
+      // TaskMetadataCache requires a `.debug` logger method; fall back to a
+      // dedicated logger when the injected one is minimal (e.g. test mocks).
+      const cacheLogger = this.logger && typeof this.logger.debug === 'function'
+        ? this.logger
+        : createLogger('resolver-cache');
+      this.resolverCache = new TaskMetadataCache({
+        ttlSeconds: options.resolverCacheTtlSeconds || DEFAULT_RESOLVER_CACHE_TTL_SECONDS,
+        maxSize: options.resolverCacheMaxSize || DEFAULT_RESOLVER_CACHE_MAX_SIZE,
+        logger: cacheLogger,
+      });
+    } else {
+      this.resolverCache = null;
+    }
 
     // Snapshot manager — injectable for testing, otherwise constructed from options
     this.snapshot = options.snapshot || new TaskSnapshot({
@@ -152,6 +178,55 @@ class TaskRegistry extends EventEmitter {
         });
       }
     }
+  }
+
+  // ── Resolver check result cache ──────────────────────────────────────────
+
+  /**
+   * Return the cached resolver check result for a task, or `null` on a miss.
+   * The poller consults this before evaluating a task's dependency resolver
+   * so that unchanged tasks skip repeat resolver executions.
+   *
+   * @param {number|string} taskId
+   * @returns {Object|null}
+   */
+  getResolverResult(taskId) {
+    return this.resolverCache ? this.resolverCache.get(taskId) : null;
+  }
+
+  /**
+   * Cache a resolver check result for a task.
+   * No-op when the cache is disabled or the result is falsy. Entries are
+   * dropped on TTL expiry, on LRU eviction, or when an on-chain event
+   * mutates the task (see `_processEvent`).
+   *
+   * @param {number|string} taskId
+   * @param {Object}        result  The resolver result object to cache.
+   */
+  setResolverResult(taskId, result) {
+    if (this.resolverCache && result) {
+      this.resolverCache.set(taskId, result);
+    }
+  }
+
+  /**
+   * Invalidate the cached resolver result for a single task.
+   * Called automatically from `_processEvent` whenever an on-chain event
+   * changes a task's state.
+   *
+   * @param {number|string} taskId
+   * @returns {boolean} `true` if an entry was removed.
+   */
+  invalidateResolverResult(taskId) {
+    return this.resolverCache ? this.resolverCache.invalidate(taskId) : false;
+  }
+
+  /**
+   * Return resolver cache performance statistics.
+   * @returns {Object|null}
+   */
+  getResolverCacheStats() {
+    return this.resolverCache ? this.resolverCache.getStats() : null;
   }
 
   /**
@@ -292,6 +367,13 @@ class TaskRegistry extends EventEmitter {
         this.updateTask(taskId, { is_active: true, status: 'active' });
         break;
 
+      case 'TaskUpdated':
+        // On-chain config change. The event only signals that the stored
+        // TaskConfig changed, so downstream caches are invalidated and the
+        // poller re-fetches the configuration on the next cycle.
+        this.updateTask(taskId, { configUpdatedAt: event.ledgerCloseAt });
+        break;
+
       case 'KeeperPaid': {
         const fee = eventData ? Number(eventData[1]) : 100;
         this.updateTask(taskId, {
@@ -355,6 +437,10 @@ class TaskRegistry extends EventEmitter {
         break;
       }
     }
+
+    // Any on-chain event that mutates a task invalidates its cached resolver
+    // check result so the next polling cycle re-evaluates with fresh state.
+    this.invalidateResolverResult(taskId);
   }
 
   /**

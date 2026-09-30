@@ -168,6 +168,13 @@ function loadConfig() {
     taskCacheEnabled: parseBoolean(process.env.TASK_CACHE_ENABLED, true),
     taskCacheTtlSeconds: parseInteger(process.env.TASK_CACHE_TTL_SECONDS, 60),
     taskCacheMaxSize: parseInteger(process.env.TASK_CACHE_MAX_SIZE, 2000),
+    // Resolver check result cache configuration
+    // LRU cache for task dependency resolver outcomes with event-driven
+    // invalidation. Avoids re-evaluating resolvers on every polling cycle for
+    // tasks whose on-chain state hasn't changed (issue #788).
+    resolverCacheEnabled: parseBoolean(process.env.RESOLVER_CACHE_ENABLED, true),
+    resolverCacheTtlSeconds: parseInteger(process.env.RESOLVER_CACHE_TTL_SECONDS, 30),
+    resolverCacheMaxSize: parseInteger(process.env.RESOLVER_CACHE_MAX_SIZE, 5000),
     realtimeStreamEnabled: parseBoolean(process.env.REALTIME_STREAM_ENABLED, true),
     realtimeStreamNamespace: process.env.REALTIME_STREAM_NAMESPACE || '/stream',
     apiGatewayEnabled: parseBoolean(process.env.API_GATEWAY_ENABLED, true),
