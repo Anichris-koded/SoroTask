@@ -20,9 +20,36 @@ pub mod storage;
 pub mod task;
 pub mod admin;
 pub mod upgrade;
+pub mod mempool;
+#[cfg(test)]
+mod test_commit_reveal;
 
 pub use storage::{TaskMeta, TaskPayload, TaskStats};
 pub use upgrade::{UpgradeProposal, UPGRADE_TIMELOCK_SECONDS};
+
+/// Pending execution commitment posted by a keeper in the commit phase.
+/// Stores the hash of (keeper_address, task_id, secret, block_target)
+/// so the on-chain commitment cannot be front-run from the mempool.
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct ExecutionCommitment {
+    /// The keeper that posted this commitment
+    pub keeper: Address,
+    /// Task this commitment is for
+    pub task_id: u64,
+    /// SHA-256 of (keeper_xdr || task_id_le8 || secret || block_target_le4)
+    pub commitment_hash: BytesN<32>,
+    /// Ledger sequence at which the commitment was posted
+    pub commit_ledger: u32,
+    /// Bond amount locked (returned on successful reveal, forfeited on expiry)
+    pub bond_amount: i128,
+}
+
+/// Number of ledgers within which the keeper must reveal after committing.
+pub const COMMIT_REVEAL_WINDOW_LEDGERS: u32 = 3;
+
+/// Minimum bond a keeper must post with a commit (prevents spam).
+pub const MIN_COMMIT_BOND: i128 = 10;
 
 use soroban_sdk::{
     contract, contracterror, contractimpl, contracttype, panic_with_error, xdr::ToXdr, Address,
@@ -121,6 +148,12 @@ pub enum Error {
     GatewayNotConfigured = 703,
     GatewayUnauthorized = 704,
     CrossChainNonceReplay = 705,
+    // Commit-reveal execution protocol errors (SC-HARD-07)
+    CommitmentRequired = 800,
+    CommitmentAlreadyExists = 801,
+    CommitmentMismatch = 802,
+    RevealWindowExpired = 803,
+    CommitmentNotFound = 804,
 }
 
 #[contracttype]
@@ -1168,6 +1201,8 @@ pub enum DataKey {
     CrossChainTaskCounter,
     /// Cross-chain gateway: per-chain enabled flag
     CrossChainSourceEnabled(u32),
+    /// Commit-reveal: pending commitment keyed by task_id (SC-HARD-07)
+    ExecutionCommitment(u64),
 }
 
 /// Transient storage reentrancy guard ensuring reentrant calls revert immediately.
@@ -4552,6 +4587,23 @@ impl SoroTaskContract {
     }
 
     pub fn execute(env: Env, keeper: Address, task_id: u64) {
+        // SC-HARD-07: Direct execution is only allowed when the caller has
+        // already posted a valid commitment via commit_execution(). This
+        // prevents mempool frontrunning by ensuring every execution was
+        // preceded by a private preimage commitment.
+        let commitment_key = DataKey::ExecutionCommitment(task_id);
+        if !env.storage().persistent().has(&commitment_key) {
+            panic_with_error!(&env, Error::CommitmentRequired);
+        }
+        // Verify that the commitment belongs to this keeper
+        let commitment: ExecutionCommitment = env
+            .storage()
+            .persistent()
+            .get(&commitment_key)
+            .unwrap_or_else(|| panic_with_error!(&env, Error::CommitmentRequired));
+        if commitment.keeper != keeper {
+            panic_with_error!(&env, Error::Unauthorized);
+        }
         enter_security_guard(&env);
         Self::execute_internal(&env, &keeper, task_id, false);
         exit_security_guard(&env);
@@ -8927,6 +8979,143 @@ impl SoroTaskContract {
             return false;
         }
         Self::_is_cross_chain_nonce_used(&env, chain_id, nonce)
+    }
+
+    // ─── Commit-Reveal Anti-Frontrunning Protocol (SC-HARD-07) ──────────────
+
+    /// Phase 1 – Commit. Keeper posts a hash commitment before executing.
+    /// `bond_amount` is debited from `DataKey::KeeperStake(keeper)`.
+    pub fn commit_execution(
+        env: Env,
+        keeper: Address,
+        task_id: u64,
+        commitment_hash: BytesN<32>,
+        bond_amount: i128,
+    ) {
+        keeper.require_auth();
+
+        if bond_amount < MIN_COMMIT_BOND {
+            panic_with_error!(&env, Error::InsufficientBalance);
+        }
+
+        let commitment_key = DataKey::ExecutionCommitment(task_id);
+        if env.storage().persistent().has(&commitment_key) {
+            panic_with_error!(&env, Error::CommitmentAlreadyExists);
+        }
+
+        if !env.storage().persistent().has(&DataKey::Task(task_id)) {
+            panic_with_error!(&env, Error::TaskNotFound);
+        }
+
+        let stake_key = DataKey::KeeperStake(keeper.clone());
+        let current_stake: i128 = env.storage().persistent().get(&stake_key).unwrap_or(0i128);
+        if current_stake < bond_amount {
+            panic_with_error!(&env, Error::InsufficientBalance);
+        }
+        env.storage().persistent().set(&stake_key, &(current_stake - bond_amount));
+
+        let commit_ledger = env.ledger().sequence();
+        let commitment = ExecutionCommitment {
+            keeper: keeper.clone(),
+            task_id,
+            commitment_hash: commitment_hash.clone(),
+            commit_ledger,
+            bond_amount,
+        };
+        env.storage().persistent().set(&commitment_key, &commitment);
+        env.storage().persistent().extend_ttl(&commitment_key, 100, 100);
+
+        env.events().publish(
+            (Symbol::new(&env, "ExecutionCommitted"), Symbol::new(&env, "v1"), task_id),
+            (keeper, commitment_hash, commit_ledger),
+        );
+    }
+
+    /// Phase 2 – Reveal. Verifies the preimage, refunds bond, and executes.
+    pub fn reveal_execution(
+        env: Env,
+        keeper: Address,
+        task_id: u64,
+        secret: Bytes,
+        block_target: u32,
+    ) {
+        keeper.require_auth();
+
+        let commitment_key = DataKey::ExecutionCommitment(task_id);
+        let commitment: ExecutionCommitment = env
+            .storage()
+            .persistent()
+            .get(&commitment_key)
+            .unwrap_or_else(|| panic_with_error!(&env, Error::CommitmentNotFound));
+
+        if commitment.keeper != keeper {
+            panic_with_error!(&env, Error::Unauthorized);
+        }
+
+        let current_ledger = env.ledger().sequence();
+        if !crate::mempool::is_within_reveal_window(
+            current_ledger,
+            commitment.commit_ledger,
+            COMMIT_REVEAL_WINDOW_LEDGERS,
+        ) {
+            panic_with_error!(&env, Error::RevealWindowExpired);
+        }
+
+        let valid = crate::mempool::verify_commitment(
+            &env, &keeper, task_id, &secret, block_target, &commitment.commitment_hash,
+        );
+        if !valid {
+            panic_with_error!(&env, Error::CommitmentMismatch);
+        }
+
+        // Refund bond
+        let stake_key = DataKey::KeeperStake(keeper.clone());
+        let current_stake: i128 = env.storage().persistent().get(&stake_key).unwrap_or(0i128);
+        env.storage().persistent().set(&stake_key, &(current_stake + commitment.bond_amount));
+
+        env.storage().persistent().remove(&commitment_key);
+
+        env.events().publish(
+            (Symbol::new(&env, "ExecutionRevealed"), Symbol::new(&env, "v1"), task_id),
+            (keeper.clone(), current_ledger),
+        );
+
+        // Call execute_internal directly — the commitment was already verified and removed above,
+        // so we skip the commitment gate (skip_auth=true bypasses keeper.require_auth() as well
+        // since we already called keeper.require_auth() at the top of reveal_execution).
+        enter_security_guard(&env);
+        Self::execute_internal(&env, &keeper, task_id, true);
+        exit_security_guard(&env);
+    }
+
+    /// Forfeit an expired commitment (callable by anyone after window closes).
+    pub fn forfeit_expired_commitment(env: Env, task_id: u64) {
+        let commitment_key = DataKey::ExecutionCommitment(task_id);
+        let commitment: ExecutionCommitment = env
+            .storage()
+            .persistent()
+            .get(&commitment_key)
+            .unwrap_or_else(|| panic_with_error!(&env, Error::CommitmentNotFound));
+
+        let current_ledger = env.ledger().sequence();
+        // Reject forfeit attempt while the reveal window is still open
+        if crate::mempool::is_within_reveal_window(
+            current_ledger,
+            commitment.commit_ledger,
+            COMMIT_REVEAL_WINDOW_LEDGERS,
+        ) {
+            panic_with_error!(&env, Error::ChallengeWindowActive);
+        }
+
+        let vault_key = DataKey::InsuranceVaultBalance;
+        let vault: i128 = env.storage().persistent().get(&vault_key).unwrap_or(0i128);
+        env.storage().persistent().set(&vault_key, &(vault + commitment.bond_amount));
+        env.storage().persistent().remove(&commitment_key);
+
+        env.events().publish(
+            (Symbol::new(&env, "CommitmentForfeited"), Symbol::new(&env, "v1"), task_id),
+            (commitment.keeper, commitment.bond_amount, current_ledger),
+        );
     }
 }
 
