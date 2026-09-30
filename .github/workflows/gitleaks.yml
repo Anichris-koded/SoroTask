@@ -27,4 +27,8 @@ jobs:
           tar --extract --gzip --file /tmp/gitleaks.tar.gz --directory /tmp
 
       - name: Run Gitleaks
-        run: /tmp/gitleaks git . --config .gitleaks.toml --redact
+        # Prefer the official GitHub Action for Gitleaks v2.
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_CONFIG: .gitleaks.toml
