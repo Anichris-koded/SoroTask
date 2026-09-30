@@ -92,5 +92,19 @@
     "seconds_short": "s",
     "interval_display": "{hours}h ({seconds} secondes)",
     "xlm_unit": "XLM"
+  },
+  "offline": {
+    "title": "État de la connexion",
+    "online": "En ligne",
+    "offline": "Hors ligne",
+    "resyncing": "Synchronisation",
+    "sync_failed": "Échec de la synchronisation",
+    "queued_actions": "{count, plural, =0 {Aucune action en attente} one {# action en attente} other {# actions en attente}}",
+    "replaying": "{count, plural, one {Relecture d'une action en attente} other {Relecture de # actions en attente}}",
+    "still_queued": "{count, plural, one {# action encore en attente} other {# actions encore en attente}}",
+    "browse_cached": "Vous pouvez continuer à consulter le contenu en cache. Les modifications seront mises en attente.",
+    "will_run_when_back": "s'exécuteront à votre retour en ligne.",
+    "retry": "Réessayer",
+    "read_only_notice": "Vous êtes en lecture seule. Ce que vous écrivez est envoyé à votre retour en ligne."
   }
 }

@@ -92,5 +92,19 @@
     "seconds_short": "秒",
     "interval_display": "{hours}小时({seconds}秒)",
     "xlm_unit": "XLM"
+  },
+  "offline": {
+    "title": "连接状态",
+    "online": "在线",
+    "offline": "离线",
+    "resyncing": "正在同步",
+    "sync_failed": "同步失败",
+    "queued_actions": "{count, plural, other {# 个操作已排队}}",
+    "replaying": "{count, plural, other {正在重放 # 个排队操作}}",
+    "still_queued": "{count, plural, other {# 个操作仍在排队}}",
+    "browse_cached": "您仍可浏览缓存内容。更改将被排队。",
+    "will_run_when_back": "将在您恢复在线后运行。",
+    "retry": "重试",
+    "read_only_notice": "您处于只读模式。您的所有输入将在恢复在线后发送。"
   }
 }
