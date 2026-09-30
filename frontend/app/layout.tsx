@@ -8,6 +8,7 @@ import { ErrorBoundary } from "@sentry/nextjs";
 import { ThemeProvider } from "next-themes";
 import { ThemeInitScript } from "./theme-init";
 import { THEME_STORAGE_KEY } from "@/src/lib/theme/themeEngine";
+import Link from "next/link";
 
 function GlobalErrorFallback({ error, resetError }: any) {
   return (
@@ -72,7 +73,7 @@ export default function RootLayout({
             theme switch flicker-free (#1241). */}
         <ThemeInitScript />
       </head>
-      <body className="antialiased">
+      <body className="antialiased min-h-dvh w-full overflow-x-clip">
         <ErrorBoundary fallback={GlobalErrorFallback}>
           <ThemeProvider
             attribute="data-theme"
@@ -91,8 +92,6 @@ export default function RootLayout({
             </AIAssistantProvider>
           </ThemeProvider>
         </ErrorBoundary>
-        {/* Initialize Sentry and fetch instrumentation on client */}
-        <ClientInit />
       </body>
     </html>
   );

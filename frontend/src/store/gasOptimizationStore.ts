@@ -23,6 +23,23 @@ export interface BatchOpportunity {
   potentialSavingXlm: number;
 }
 
+export interface HourlyGasSample {
+  day: number;
+  hour: number;
+  feeXlm: number;
+}
+
+function createWeeklyHistory(): HourlyGasSample[] {
+  return Array.from({ length: 7 * 24 }, (_, index) => {
+    const day = Math.floor(index / 24);
+    const hour = index % 24;
+    const dailyPeak = hour >= 14 && hour <= 19 ? 0.055 : 0;
+    const overnightRelief = hour >= 1 && hour <= 6 ? -0.025 : 0;
+    const dayVariation = ((day * 17 + hour * 7) % 13) / 1000;
+    return { day, hour, feeXlm: Math.max(0.015, 0.08 + dailyPeak + overnightRelief + dayVariation) };
+  });
+}
+
 interface GasOptimizationStoreState {
   // Gas Metrics
   congestionLevel: "low" | "medium" | "high";
@@ -33,6 +50,8 @@ interface GasOptimizationStoreState {
   // Optimization suggestions
   bestHourUtc: number;
   potentialOffpeakSavingsPercent: number;
+  hourlyHistory: HourlyGasSample[];
+  scheduledHourUtc: number | null;
   batchOpportunities: BatchOpportunity[];
 
   // Simulation Status
@@ -41,6 +60,7 @@ interface GasOptimizationStoreState {
 
   // Actions
   refreshMetrics: () => void;
+  optimizeSchedule: () => void;
   runSimulation: (contractId: string, method: string) => Promise<void>;
   applyBatching: (opportunityId: string) => void;
 }
@@ -63,6 +83,8 @@ export const useGasOptimizationStore = create<GasOptimizationStoreState>((set, g
   feeTiers: mockTiers,
   bestHourUtc: 3, // 3 AM UTC is off-peak
   potentialOffpeakSavingsPercent: 42,
+  hourlyHistory: createWeeklyHistory(),
+  scheduledHourUtc: null,
   batchOpportunities: mockBatchOpportunities,
   isSimulating: false,
   simulationResult: null,
@@ -87,6 +109,16 @@ export const useGasOptimizationStore = create<GasOptimizationStoreState>((set, g
       activeTxCount: Math.floor(Math.random() * 400) + 50,
       feeTiers: updatedTiers,
     });
+  },
+
+  optimizeSchedule: () => {
+    const averages = Array.from({ length: 24 }, (_, hour) => {
+      const samples = get().hourlyHistory.filter((sample) => sample.hour === hour);
+      return { hour, fee: samples.reduce((sum, sample) => sum + sample.feeXlm, 0) / samples.length };
+    });
+    const best = averages.reduce((lowest, current) => current.fee < lowest.fee ? current : lowest);
+    const savings = Math.max(0, (get().baseFee - best.fee) / get().baseFee * 100);
+    set({ bestHourUtc: best.hour, potentialOffpeakSavingsPercent: Math.round(savings), scheduledHourUtc: best.hour });
   },
 
   runSimulation: async (contractId, method) => {
