@@ -1,8 +1,6 @@
 #![no_std]
 
-mod monolith;
 pub mod rate_limiter;
-
 pub mod access;
 pub mod packed_args;
 // Issue #777 investigation: this file previously declared
