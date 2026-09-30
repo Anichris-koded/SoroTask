@@ -24,6 +24,9 @@ const {
 } = require("./graphql/db");
 const { WebhookDispatcher } = require("./webhooks/dispatcher");
 const { ParallelLedgerParser } = require("./parallelParser");
+const { CacheInvalidationEngine } = require("./cacheInvalidator");
+const { LedgerGapDetector } = require("./ledgerGapDetector");
+const { HighAvailabilityManager } = require("./ha");
 
 // Configuration
 const RPC_URL = "https://soroban-testnet.stellar.org"; // Change as needed

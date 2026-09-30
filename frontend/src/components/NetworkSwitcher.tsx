@@ -5,7 +5,12 @@ import { useNetworkStore } from "@/src/lib/network/networkStore";
 import { NetworkType, NETWORK_CONFIGS } from "@/src/lib/network/types";
 import { FiGlobe, FiCheckCircle, FiAlertCircle, FiRefreshCw } from "react-icons/fi";
 
-export function NetworkSwitcher() {
+export interface NetworkSwitcherProps {
+  onNetworkChange?: (newNetwork: NetworkType) => void;
+  className?: string;
+}
+
+export function NetworkSwitcher({ onNetworkChange, className = "" }: NetworkSwitcherProps) {
   const {
     currentNetwork,
     config,
@@ -23,6 +28,9 @@ export function NetworkSwitcher() {
   const handleSelectNetwork = async (network: NetworkType) => {
     setIsOpen(false);
     await switchNetwork(network, { clearCaches: true });
+    if (onNetworkChange) {
+      onNetworkChange(network);
+    }
   };
 
   const getBadgeColor = (net: NetworkType) => {
@@ -39,7 +47,7 @@ export function NetworkSwitcher() {
   };
 
   return (
-    <div className="relative inline-block text-left" data-testid="network-switcher-container">
+    <div className={`relative inline-block text-left ${className}`} data-testid="network-switcher-container">
       <div className="flex items-center gap-2">
         <button
           type="button"
