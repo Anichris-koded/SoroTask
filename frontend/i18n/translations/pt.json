@@ -92,14 +92,19 @@
     "seconds_short": "s",
     "interval_display": "{hours}h ({seconds} segundos)",
     "xlm_unit": "XLM"
-  },
-  "theme": {
+  }
+    },
+    "theme": {
     "label": "Tema",
     "light": "Claro",
     "dark": "Escuro",
     "oled": "OLED de alto contraste",
     "system": "Sistema",
     "change": "Tema: {mode}. Clique para alterar.",
-    "resolving_to": "A resolver atualmente para {resolved}."
+    "resolving_to": "A resolver atualmente para {resolved}.",
+    "language": {
+    "label": "Selecionar idioma",
+    "loading": "A carregar idioma...",
+    "available": "{count, plural, =0 {Nenhum idioma} one {# idioma} other {# idiomas}}"
   }
 }

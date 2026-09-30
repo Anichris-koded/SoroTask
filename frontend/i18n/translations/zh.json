@@ -92,14 +92,19 @@
     "seconds_short": "秒",
     "interval_display": "{hours}小时({seconds}秒)",
     "xlm_unit": "XLM"
-  },
-  "theme": {
+  }
+    },
+    "theme": {
     "label": "主题",
     "light": "浅色",
     "dark": "深色",
     "oled": "高对比度 OLED",
     "system": "跟随系统",
     "change": "主题：{mode}。点击切换。",
-    "resolving_to": "当前解析为 {resolved}。"
+    "resolving_to": "当前解析为 {resolved}。",
+    "language": {
+    "label": "选择语言",
+    "loading": "正在加载语言...",
+    "available": "{count, plural, other {# 种语言}}"
   }
 }
