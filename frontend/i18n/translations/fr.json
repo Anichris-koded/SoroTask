@@ -92,5 +92,14 @@
     "seconds_short": "s",
     "interval_display": "{hours}h ({seconds} secondes)",
     "xlm_unit": "XLM"
+  },
+  "theme": {
+    "label": "Thème",
+    "light": "Clair",
+    "dark": "Sombre",
+    "oled": "OLED contraste élevé",
+    "system": "Système",
+    "change": "Thème : {mode}. Cliquez pour changer.",
+    "resolving_to": "Se résout actuellement en {resolved}."
   }
 }
