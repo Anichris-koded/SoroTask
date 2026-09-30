@@ -13,11 +13,14 @@ import {
   listTasks,
   registerTask,
   updateTask,
+  pauseTask,
+  resumeTask,
+  cancelTask,
   type RegisterTaskInput,
   type Task,
   type TaskFilters,
   type UpdateTaskInput,
-} from "../lib/mockApi/tasks";
+} from "../lib/api/tasks";
 import { taskKeys } from "../lib/query/keys";
 import { createPerformanceMonitor } from "../lib/frontend-performance";
 
@@ -146,6 +149,63 @@ export function useDeleteTask(
   const queryClient = useQueryClient();
   return useMutation<{ id: string }, Error, string>({
     mutationFn: deleteTask,
+    ...options,
+    onSuccess: (data, variables, onMutateResult, context) => {
+      queryClient.removeQueries({ queryKey: taskKeys.detail(data.id) });
+      void queryClient.invalidateQueries({ queryKey: taskKeys.lists() });
+      options?.onSuccess?.(data, variables, onMutateResult, context);
+    },
+  });
+}
+
+// Lifecycle mutations
+
+interface TaskLifecycleInput {
+  taskId: string;
+  userAddress?: string;
+  contractId?: string;
+}
+
+export function usePauseTask(
+  options?: UseMutationOptions<{ id: string; status: TaskStatus }, Error, TaskLifecycleInput>,
+) {
+  const queryClient = useQueryClient();
+  return useMutation<{ id: string; status: TaskStatus }, Error, TaskLifecycleInput>({
+    mutationFn: ({ taskId, userAddress, contractId }) => pauseTask(taskId, userAddress, contractId),
+    ...options,
+    onSuccess: (data, variables, onMutateResult, context) => {
+      queryClient.setQueryData<Task>(taskKeys.detail(data.id), (old) => 
+        old ? { ...old, status: data.status } : old
+      );
+      void queryClient.invalidateQueries({ queryKey: taskKeys.lists() });
+      options?.onSuccess?.(data, variables, onMutateResult, context);
+    },
+  });
+}
+
+export function useResumeTask(
+  options?: UseMutationOptions<{ id: string; status: TaskStatus }, Error, TaskLifecycleInput>,
+) {
+  const queryClient = useQueryClient();
+  return useMutation<{ id: string; status: TaskStatus }, Error, TaskLifecycleInput>({
+    mutationFn: ({ taskId, userAddress, contractId }) => resumeTask(taskId, userAddress, contractId),
+    ...options,
+    onSuccess: (data, variables, onMutateResult, context) => {
+      queryClient.setQueryData<Task>(taskKeys.detail(data.id), (old) => 
+        old ? { ...old, status: data.status } : old
+      );
+      void queryClient.invalidateQueries({ queryKey: taskKeys.lists() });
+      options?.onSuccess?.(data, variables, onMutateResult, context);
+    },
+  });
+}
+
+export function useCancelTask(
+  options?: UseMutationOptions<{ id: string }, Error, TaskLifecycleInput>,
+) {
+  const queryClient = useQueryClient();
+  return useMutation<{ id: string }, Error, TaskLifecycleInput>({
+    mutationFn: ({ taskId, userAddress, contractId }) => cancelTask(taskId, userAddress, contractId),
     ...options,
     onSuccess: (data, variables, onMutateResult, context) => {
       queryClient.removeQueries({ queryKey: taskKeys.detail(data.id) });

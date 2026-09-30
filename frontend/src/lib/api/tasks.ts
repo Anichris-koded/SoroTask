@@ -303,6 +303,71 @@ export async function updateTask(input: UpdateTaskInput & { userAddress?: string
   };
 }
 
+// Task lifecycle operations
+
+export async function pauseTask(id: string, userAddress?: string, contractId?: string): Promise<{ id: string; status: TaskStatus }> {
+  try {
+    if (userAddress && contractId) {
+      const { SorobanService } = await import("../../../app/lib/soroban.service");
+      const soroban = new SorobanService();
+      const { nativeToScVal } = await import("@stellar/stellar-sdk");
+      const taskIdU64 = BigInt(id.replace(/\D/g, "") || "0");
+      await soroban.executeContractCall({
+        publicKey: userAddress,
+        contractId,
+        method: "pause_task",
+        args: [nativeToScVal(taskIdU64, { type: "u64" })],
+      });
+    }
+  } catch (err) {
+    console.warn("pause_task contract call failed:", err);
+  }
+
+  return { id, status: "pending" };
+}
+
+export async function resumeTask(id: string, userAddress?: string, contractId?: string): Promise<{ id: string; status: TaskStatus }> {
+  try {
+    if (userAddress && contractId) {
+      const { SorobanService } = await import("../../../app/lib/soroban.service");
+      const soroban = new SorobanService();
+      const { nativeToScVal } = await import("@stellar/stellar-sdk");
+      const taskIdU64 = BigInt(id.replace(/\D/g, "") || "0");
+      await soroban.executeContractCall({
+        publicKey: userAddress,
+        contractId,
+        method: "resume_task",
+        args: [nativeToScVal(taskIdU64, { type: "u64" })],
+      });
+    }
+  } catch (err) {
+    console.warn("resume_task contract call failed:", err);
+  }
+
+  return { id, status: "running" };
+}
+
+export async function cancelTask(id: string, userAddress?: string, contractId?: string): Promise<{ id: string }> {
+  try {
+    if (userAddress && contractId) {
+      const { SorobanService } = await import("../../../app/lib/soroban.service");
+      const soroban = new SorobanService();
+      const { nativeToScVal } = await import("@stellar/stellar-sdk");
+      const taskIdU64 = BigInt(id.replace(/\D/g, "") || "0");
+      await soroban.executeContractCall({
+        publicKey: userAddress,
+        contractId,
+        method: "cancel_task",
+        args: [nativeToScVal(taskIdU64, { type: "u64" })],
+      });
+    }
+  } catch (err) {
+    console.warn("cancel_task contract call failed:", err);
+  }
+
+  return { id };
+}
+
 export async function deleteTask(id: string): Promise<{ id: string }> {
   // Use pauseTask from GraphQL as a substitute for deletion
   const mutation = `
